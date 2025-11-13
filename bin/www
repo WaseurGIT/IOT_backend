@@ -1,0 +1,234 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+require('dotenv').config();
+var app = require('../app');
+var debug = require('debug')('iot-backend:server');
+var http = require('http');
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || '3000');
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+
+/**
+ * Setup Socket.IO
+ */
+
+var io = require('socket.io')(server, {
+  cors: {
+    origin: process.env.CORS_ORIGIN || '*',
+    methods: ['GET', 'POST'],
+  },
+  maxHttpBufferSize: 1e8, // 100 MB for large images
+});
+
+// Make io accessible to our router
+app.set('io', io);
+
+// Socket.IO connection handling
+var connectedClients = 0;
+
+io.on('connection', function(socket) {
+  connectedClients++;
+  var isESP32 = false;
+  console.log('📱 Client connected (' + connectedClients + ' total), ID: ' + socket.id);
+
+  // Listen for ESP32 identification
+  socket.on('message', function(data) {
+    // Check if this is an ESP32 device
+    if (typeof data === 'string') {
+      try {
+        var parsed = JSON.parse(data);
+        if (parsed.type === 'esp32_camera') {
+          isESP32 = true;
+          console.log('📷 ESP32 Camera connected!', parsed.device);
+          return;
+        }
+      } catch (e) {
+        // Not JSON, ignore
+      }
+    }
+    
+    // Handle binary frames from ESP32
+    if (Buffer.isBuffer(data) && isESP32) {
+      // This is a frame from ESP32
+      console.log('📸 Frame received from ESP32 via WebSocket:', data.length, 'bytes');
+      
+      // Save as latest frame
+      app.set('latestFrame', data);
+      
+      // Update frame count
+      var frameCount = (app.get('frameCount') || 0) + 1;
+      app.set('frameCount', frameCount);
+      
+      // Increment FPS counter
+      var incrementFrameCount = app.get('incrementFrameCount');
+      if (incrementFrameCount) {
+        incrementFrameCount();
+      }
+      
+      // Update ESP32 status
+      var esp32Status = app.get('esp32Status') || { connected: false };
+      esp32Status.connected = true;
+      esp32Status.lastUpdate = new Date();
+      esp32Status.frameCount = frameCount;
+      app.set('esp32Status', esp32Status);
+      
+      // Broadcast to all clients (except ESP32 itself)
+      socket.broadcast.emit('frame', {
+        image: data.toString('base64'),
+        timestamp: Date.now(),
+      });
+    }
+  });
+
+  // Send latest frame immediately if available (for non-ESP32 clients)
+  var latestFrame = app.get('latestFrame');
+  if (latestFrame) {
+    socket.emit('frame', {
+      image: latestFrame.toString('base64'),
+      timestamp: Date.now(),
+    });
+  }
+
+  // Send status
+  var esp32Status = app.get('esp32Status') || {
+    connected: false,
+    lastUpdate: null,
+    frameCount: 0,
+    fps: 0,
+  };
+  socket.emit('status', esp32Status);
+
+  // Request frame from ESP32
+  socket.on('requestFrame', function() {
+    var latestFrame = app.get('latestFrame');
+    if (latestFrame) {
+      socket.emit('frame', {
+        image: latestFrame.toString('base64'),
+        timestamp: Date.now(),
+      });
+    }
+  });
+
+  // Capture image
+  socket.on('capture', function(callback) {
+    var fs = require('fs');
+    var path = require('path');
+    var latestFrame = app.get('latestFrame');
+    
+    try {
+      if (!latestFrame) {
+        callback({ success: false, error: 'No frame available' });
+        return;
+      }
+
+      var timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      var filename = 'ESP32_CAM_' + timestamp + '.jpg';
+      var uploadsDir = path.join(__dirname, '../uploads');
+      var filepath = path.join(uploadsDir, filename);
+
+      fs.writeFileSync(filepath, latestFrame);
+
+      callback({
+        success: true,
+        filename: filename,
+        image: latestFrame.toString('base64'),
+      });
+    } catch (error) {
+      callback({ success: false, error: 'Failed to save image' });
+    }
+  });
+
+  socket.on('disconnect', function() {
+    connectedClients--;
+    if (isESP32) {
+      console.log('📷 ESP32 Camera disconnected');
+      var esp32Status = app.get('esp32Status') || {};
+      esp32Status.connected = false;
+      app.set('esp32Status', esp32Status);
+    } else {
+      console.log('📱 Client disconnected (' + connectedClients + ' remaining)');
+    }
+  });
+});
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+server.listen(port);
+server.on('error', onError);
+server.on('listening', onListening);
+
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  var bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+}

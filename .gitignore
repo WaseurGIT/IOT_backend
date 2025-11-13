@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# Uploaded images
+uploads/*.jpg
+uploads/*.jpeg
+uploads/*.png
+
+# Keep uploads directory structure
+!uploads/.gitkeep
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+

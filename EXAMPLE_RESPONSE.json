@@ -1,0 +1,153 @@
+{
+  "capture_endpoint_response": {
+    "description": "Response from POST /camera/capture",
+    "example": {
+      "success": true,
+      "filename": "ESP32_CAM_2025-11-12T10-30-45-123Z.jpg",
+      "path": "/home/user/iot_backend/uploads/ESP32_CAM_2025-11-12T10-30-45-123Z.jpg",
+      "url": "/uploads/ESP32_CAM_2025-11-12T10-30-45-123Z.jpg",
+      "size": 51234,
+      "timestamp": "2025-11-12T10-30-45-123Z",
+      "disease_prediction": {
+        "disease": "Tomato___Early_blight",
+        "plant": "Tomato",
+        "condition": "Early_blight",
+        "confidence": 0.9523,
+        "description": "Fungal disease causing dark spots with concentric rings on leaves.",
+        "remedies": [
+          "Remove infected leaves immediately",
+          "Apply copper-based fungicides",
+          "Mulch around plants to prevent soil splash",
+          "Rotate crops yearly",
+          "Water at base of plants, not overhead"
+        ],
+        "severity": "moderate"
+      }
+    }
+  },
+  "predict_endpoint_response": {
+    "description": "Response from POST /camera/predict/:filename",
+    "example": {
+      "success": true,
+      "filename": "ESP32_CAM_2025-11-12T10-30-45-123Z.jpg",
+      "prediction": {
+        "disease": "Potato___Late_blight",
+        "plant": "Potato",
+        "condition": "Late_blight",
+        "confidence": 0.9834,
+        "description": "Devastating disease that destroyed Irish potato crops.",
+        "remedies": [
+          "Apply fungicides at first sign",
+          "Destroy infected plants",
+          "Use resistant varieties",
+          "Avoid overhead watering",
+          "Ensure good drainage"
+        ],
+        "severity": "critical"
+      },
+      "top_predictions": [
+        {
+          "disease": "Potato___Late_blight",
+          "confidence": 0.9834,
+          "info": {
+            "description": "Devastating disease that destroyed Irish potato crops.",
+            "remedies": [
+              "Apply fungicides at first sign",
+              "Destroy infected plants",
+              "Use resistant varieties",
+              "Avoid overhead watering",
+              "Ensure good drainage"
+            ],
+            "severity": "critical"
+          }
+        },
+        {
+          "disease": "Potato___Early_blight",
+          "confidence": 0.0123,
+          "info": {
+            "description": "Fungal disease with target-like spots on leaves.",
+            "remedies": [
+              "Apply fungicides preventatively",
+              "Remove infected foliage",
+              "Rotate crops",
+              "Maintain plant health with proper fertilization",
+              "Use certified disease-free seed potatoes"
+            ],
+            "severity": "moderate"
+          }
+        },
+        {
+          "disease": "Tomato___Late_blight",
+          "confidence": 0.0034,
+          "info": {
+            "description": "Serious fungal disease causing rapid plant death.",
+            "remedies": [
+              "Remove and destroy infected plants immediately",
+              "Apply fungicides preventatively",
+              "Avoid overhead watering",
+              "Plant resistant varieties",
+              "Ensure good air circulation"
+            ],
+            "severity": "critical"
+          }
+        }
+      ]
+    }
+  },
+  "healthy_plant_example": {
+    "description": "Example response for a healthy plant",
+    "example": {
+      "success": true,
+      "filename": "ESP32_CAM_2025-11-12T11-15-30-456Z.jpg",
+      "prediction": {
+        "disease": "Tomato___healthy",
+        "plant": "Tomato",
+        "condition": "healthy",
+        "confidence": 0.9712,
+        "description": "Your Tomato plant appears healthy!",
+        "remedies": [
+          "Continue regular watering schedule",
+          "Maintain proper fertilization",
+          "Monitor for any signs of disease",
+          "Ensure adequate sunlight and air circulation"
+        ],
+        "severity": "none"
+      }
+    }
+  },
+  "ml_service_unavailable": {
+    "description": "Response when ML service is not running",
+    "example": {
+      "success": true,
+      "filename": "ESP32_CAM_2025-11-12T10-30-45-123Z.jpg",
+      "path": "/home/user/iot_backend/uploads/ESP32_CAM_2025-11-12T10-30-45-123Z.jpg",
+      "url": "/uploads/ESP32_CAM_2025-11-12T10-30-45-123Z.jpg",
+      "size": 51234,
+      "timestamp": "2025-11-12T10-30-45-123Z"
+    },
+    "note": "disease_prediction field will be absent if ML service is unavailable"
+  },
+  "severity_levels": {
+    "none": "Plant is healthy",
+    "moderate": "Disease is manageable with proper care",
+    "high": "Requires immediate attention",
+    "critical": "Severe disease, may lead to plant death"
+  },
+  "supported_plants": [
+    "Apple",
+    "Blueberry",
+    "Cherry",
+    "Corn (Maize)",
+    "Grape",
+    "Orange",
+    "Peach",
+    "Pepper (Bell)",
+    "Potato",
+    "Raspberry",
+    "Soybean",
+    "Squash",
+    "Strawberry",
+    "Tomato"
+  ]
+}
+
