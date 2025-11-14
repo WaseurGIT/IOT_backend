@@ -27,7 +27,8 @@ var rawBodyMiddleware = function(req, res, next) {
 };
 
 /**
- * ESP32 sends frame to this endpoint
+ * ESP32 sends frame to this endpoint (DEPRECATED - Now using Socket.IO only)
+ * Kept for backward compatibility or testing purposes
  */
 router.post('/frame', rawBodyMiddleware, function(req, res) {
   try {
