@@ -6,7 +6,10 @@ var FormData = require('form-data');
 var axios = require('axios');
 
 // ML Service Configuration
-var ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5000';
+var ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'https://iot-ml-mib6.onrender.com';
+
+// Production mode detection (Render.com or production environment)
+var IS_PRODUCTION = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 
 /**
  * Middleware to handle raw image data
@@ -110,7 +113,9 @@ router.get('/snapshot', function(req, res) {
 });
 
 /**
- * Save captured image and predict disease
+ * Capture image and predict disease
+ * In production mode: Only predicts (doesn't save image)
+ * In development mode: Saves image and predicts
  */
 router.post('/capture', async function(req, res) {
   try {
@@ -122,16 +127,39 @@ router.post('/capture', async function(req, res) {
 
     var timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     var filename = 'ESP32_CAM_' + timestamp + '.jpg';
-    var uploadsDir = path.join(__dirname, '../uploads');
-    var filepath = path.join(uploadsDir, filename);
+    var savedImageInfo = null;
 
-    // Save the image
-    fs.writeFileSync(filepath, latestFrame);
+    // Only save image in development mode (not in production/Render)
+    if (!IS_PRODUCTION) {
+      try {
+        var uploadsDir = path.join(__dirname, '../uploads');
+        var filepath = path.join(uploadsDir, filename);
+        
+        // Ensure uploads directory exists
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        
+        // Save the image
+        fs.writeFileSync(filepath, latestFrame);
+        savedImageInfo = {
+          filename: filename,
+          path: filepath,
+          url: '/uploads/' + filename,
+        };
+        console.log('💾 Image saved on backend server:', filename);
+      } catch (saveError) {
+        console.error('⚠️  Failed to save image (continuing with prediction):', saveError.message);
+      }
+    } else {
+      console.log('🌐 Production mode: Skipping image save (Render.com ephemeral filesystem)');
+    }
 
     // Predict disease using ML service
     var prediction = null;
     try {
       console.log('🔍 Sending image to ML service for prediction...');
+      console.log('   ML Service URL:', ML_SERVICE_URL);
       
       var formData = new FormData();
       formData.append('image', latestFrame, {
@@ -144,7 +172,7 @@ router.post('/capture', async function(req, res) {
         formData,
         {
           headers: formData.getHeaders(),
-          timeout: 10000, // 10 second timeout
+          timeout: 15000, // 15 second timeout (increased for Render)
         }
       );
 
@@ -166,18 +194,26 @@ router.post('/capture', async function(req, res) {
       if (mlError.response) {
         console.error('   Response status:', mlError.response.status);
         console.error('   Response data:', mlError.response.data);
+      } else if (mlError.code === 'ECONNREFUSED' || mlError.code === 'ETIMEDOUT') {
+        console.error('   Connection failed - ML service may be starting up (cold start)');
       }
       // Continue even if ML service fails
     }
 
+    // Build response
     var response = {
       success: true,
-      filename: filename,
-      path: filepath,
-      url: '/uploads/' + filename,
       size: latestFrame.length,
       timestamp: timestamp,
+      mode: IS_PRODUCTION ? 'production' : 'development',
     };
+
+    // Add saved image info if available (development mode only)
+    if (savedImageInfo) {
+      response.filename = savedImageInfo.filename;
+      response.path = savedImageInfo.path;
+      response.url = savedImageInfo.url;
+    }
 
     // Add prediction if available
     if (prediction) {
@@ -187,11 +223,11 @@ router.post('/capture', async function(req, res) {
       console.log('⚠️  No prediction available, sending response without prediction');
     }
 
-    console.log('📤 Sending response to client:', JSON.stringify(response, null, 2));
+    console.log('📤 Sending response to client');
     res.json(response);
   } catch (error) {
-    console.error('Error saving image:', error);
-    res.status(500).json({ error: 'Failed to save image' });
+    console.error('Error processing capture:', error);
+    res.status(500).json({ error: 'Failed to process capture' });
   }
 });
 
