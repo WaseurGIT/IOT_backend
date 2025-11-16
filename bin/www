@@ -38,7 +38,8 @@ app.set('wss', wss);
 
 // WebSocket connection handling
 var connectedClients = 0;
-var esp32Client = null; // Store ESP32 connection separately
+var esp32CameraClient = null; // Store ESP32 Camera connection
+var esp32CarClient = null; // Store ESP32 Car connection
 var webClients = new Set(); // Store web client connections
 
 wss.on('connection', function(ws, req) {
@@ -98,44 +99,115 @@ wss.on('connection', function(ws, req) {
 
   // Handle incoming messages
   ws.on('message', function(data) {
-    // Check if it's a text message (identification)
+    var messageText = null;
+    var parsed = null;
+    
+    // Convert buffer to string if needed
     if (Buffer.isBuffer(data)) {
-      // Try to parse as JSON first (for identification)
       try {
-        var text = data.toString('utf8');
-        var parsed = JSON.parse(text);
-        if (parsed.type === 'esp32_camera') {
-          isESP32 = true;
-          esp32Client = ws;
-          console.log('📷 ESP32 Camera connected!', parsed.device);
-          return;
-        }
+        messageText = data.toString('utf8');
+        parsed = JSON.parse(messageText);
       } catch (e) {
-        // Not JSON, treat as binary frame data
-        if (isESP32) {
+        // Not JSON, treat as binary frame data (for camera)
+        if (isESP32 && esp32CameraClient === ws) {
           processFrame(data);
         }
+        return;
       }
     } else if (typeof data === 'string') {
-      // Text message
+      messageText = data;
       try {
-        var parsed = JSON.parse(data);
-        if (parsed.type === 'esp32_camera') {
-          isESP32 = true;
-          esp32Client = ws;
-          console.log('📷 ESP32 Camera connected!', parsed.device);
-          return;
-        }
+        parsed = JSON.parse(messageText);
       } catch (e) {
         // Not JSON, ignore
+        return;
       }
     }
     
-    // If it's binary and ESP32 is identified, process as frame
-    if (Buffer.isBuffer(data) && isESP32) {
+    // Handle device identification
+    if (parsed && parsed.type) {
+      if (parsed.type === 'esp32_camera') {
+        isESP32 = true;
+        esp32CameraClient = ws;
+        console.log('📷 ESP32 Camera connected!', parsed.device);
+        app.set('esp32CameraClient', ws);
+        return;
+      } else if (parsed.type === 'esp32_car') {
+        isESP32 = true;
+        esp32CarClient = ws;
+        console.log('🚗 ESP32 Car connected!', parsed.device);
+        app.set('esp32CarClient', ws);
+        app.set('carStatus', {
+          connected: true,
+          lastUpdate: new Date(),
+          status: parsed.status || 'ready'
+        });
+        return;
+      } else if (parsed.type === 'ack') {
+        // Acknowledgment from ESP32 car
+        console.log('✅ Car command acknowledged:', parsed.command);
+        // Broadcast acknowledgment to web clients
+        webClients.forEach(function(client) {
+          if (client.readyState === 1) {
+            client.send(JSON.stringify({
+              type: 'car_ack',
+              command: parsed.command,
+              status: parsed.status
+            }));
+          }
+        });
+        return;
+      }
+    }
+    
+    // Handle car control commands from web clients
+    if (parsed && parsed.command && !isESP32) {
+      handleCarCommand(parsed);
+      return;
+    }
+    
+    // If it's binary and ESP32 camera is identified, process as frame
+    if (Buffer.isBuffer(data) && isESP32 && esp32CameraClient === ws) {
       processFrame(data);
     }
   });
+  
+  // Helper function to handle car control commands
+  function handleCarCommand(commandData) {
+    var command = commandData.command;
+    var speed = commandData.speed || 200;
+    
+    // Validate command
+    var validCommands = ['forward', 'backward', 'left', 'right', 'stop'];
+    if (validCommands.indexOf(command) === -1) {
+      console.log('⚠️  Invalid car command:', command);
+      return;
+    }
+    
+    // Send command to ESP32 car
+    if (esp32CarClient && esp32CarClient.readyState === 1) {
+      var carCommand = JSON.stringify({
+        command: command,
+        speed: speed
+      });
+      esp32CarClient.send(carCommand);
+      console.log('📤 Car command sent:', command, 'speed:', speed);
+      
+      // Update car status
+      var carStatus = app.get('carStatus') || {};
+      carStatus.lastCommand = command;
+      carStatus.lastCommandTime = new Date();
+      app.set('carStatus', carStatus);
+    } else {
+      console.log('⚠️  Car not connected. Command ignored:', command);
+      // Notify web client that car is not connected
+      ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Car not connected',
+        command: command
+      }));
+    }
+  }
 
   // Handle client type (ESP32 or web client)
   if (!isESP32) {
@@ -153,7 +225,7 @@ wss.on('connection', function(ws, req) {
       ws.send(frameMessage);
     }
 
-    // Send status
+    // Send camera status
     var esp32Status = app.get('esp32Status') || {
       connected: false,
       lastUpdate: null,
@@ -164,17 +236,38 @@ wss.on('connection', function(ws, req) {
       type: 'status',
       data: esp32Status,
     }));
+    
+    // Send car status
+    var carStatus = app.get('carStatus') || {
+      connected: false,
+      lastUpdate: null,
+      status: 'disconnected'
+    };
+    ws.send(JSON.stringify({
+      type: 'car_status',
+      data: carStatus,
+    }));
   }
 
   // Handle disconnection
   ws.on('close', function() {
     connectedClients--;
     if (isESP32) {
-      console.log('📷 ESP32 Camera disconnected');
-      esp32Client = null;
-      var esp32Status = app.get('esp32Status') || {};
-      esp32Status.connected = false;
-      app.set('esp32Status', esp32Status);
+      if (esp32CameraClient === ws) {
+        console.log('📷 ESP32 Camera disconnected');
+        esp32CameraClient = null;
+        app.set('esp32CameraClient', null);
+        var esp32Status = app.get('esp32Status') || {};
+        esp32Status.connected = false;
+        app.set('esp32Status', esp32Status);
+      } else if (esp32CarClient === ws) {
+        console.log('🚗 ESP32 Car disconnected');
+        esp32CarClient = null;
+        app.set('esp32CarClient', null);
+        var carStatus = app.get('carStatus') || {};
+        carStatus.connected = false;
+        app.set('carStatus', carStatus);
+      }
     } else {
       webClients.delete(ws);
       console.log('📱 Web client disconnected (' + connectedClients + ' remaining)');

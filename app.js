@@ -9,6 +9,7 @@ var fs = require('fs');
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 var cameraRouter = require('./routes/camera');
+var carRouter = require('./routes/car');
 
 var app = express();
 
@@ -49,6 +50,15 @@ app.set('esp32Status', {
   fps: 0,
 });
 
+// Initialize Car status
+app.set('carStatus', {
+  connected: false,
+  lastUpdate: null,
+  status: 'disconnected',
+  lastCommand: null,
+  lastCommandTime: null,
+});
+
 // Calculate FPS
 var lastFpsCheck = Date.now();
 var framesSinceLastCheck = 0;
@@ -86,6 +96,7 @@ app.set('incrementFrameCount', function() {
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
 app.use('/', cameraRouter);
+app.use('/car', carRouter);
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
