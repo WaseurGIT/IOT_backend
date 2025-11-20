@@ -3,11 +3,11 @@
 #include <ArduinoJson.h>
 
 // WiFi credentials
-const char *ssid = "Halloween 🎃";
-const char *password = "Hasan123";
+const char *ssid = "TP-Link";
+const char *password = "asdfghjkl";
 
 // WebSocket server
-const char *websocket_server = "192.168.0.198";
+const char *websocket_server = "192.168.0.115";
 const int websocket_port = 3000;
 const char *websocket_path = "/ws";
 
@@ -23,8 +23,6 @@ const char *websocket_path = "/ws";
 
 // PWM settings
 const int freq = 30000;
-const int pwmChannelA = 0;
-const int pwmChannelB = 1;
 const int resolution = 8;
 
 // Default motor speed (0-255)
@@ -44,11 +42,9 @@ void setup()
   pinMode(IN4, OUTPUT);
   pinMode(ENB, OUTPUT);
 
-  // Setup PWM
-  ledcSetup(pwmChannelA, freq, resolution);
-  ledcAttachPin(ENA, pwmChannelA);
-  ledcSetup(pwmChannelB, freq, resolution);
-  ledcAttachPin(ENB, pwmChannelB);
+  // Setup PWM - FIXED FOR ESP32 CORE v3.x
+  ledcAttach(ENA, freq, resolution);  // Replaces ledcSetup + ledcAttachPin
+  ledcAttach(ENB, freq, resolution);  // Replaces ledcSetup + ledcAttachPin
 
   // Stop motors initially
   stopCar();
@@ -113,12 +109,12 @@ void motorBStop()
 
 void setMotorASpeed(uint8_t speed)
 {
-  ledcWrite(pwmChannelA, speed);
+  ledcWrite(ENA, speed);  // Changed: now writes directly to pin instead of channel
 }
 
 void setMotorBSpeed(uint8_t speed)
 {
-  ledcWrite(pwmChannelB, speed);
+  ledcWrite(ENB, speed);  // Changed: now writes directly to pin instead of channel
 }
 
 // ===== CAR CONTROL FUNCTIONS ===== //

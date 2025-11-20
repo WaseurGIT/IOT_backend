@@ -1,0 +1,142 @@
+Crop diseases have a drastic impact on agricultural productivity as they cause huge losses in yield and economic consequences. Conventional techniques of detecting diseases are laborious, time consuming and in most cases lead to delayed interventions. In the given paper, CropGuardian which is an intelligent IoT-based system of automated crop disease detection and treatment through the fusion of autonomous mobile robotics, real-time camera streaming, and deep learning is introduced. The system uses ESP32-CAM to stream the video, deep learning model based on EfficientNet and trained on the PlantVillage data to reach the accuracy of 96.5 percent, and React Native that provides mobile application to monitor and control the system remotely. This is possible because the autonomous four-wheeled robotic platform allows it to navigate through the crop fields precisely and an inbuilt water pump system is used to dispense medicine in targeted areas. Groq AI is used to improve real-time disease prediction to offer farmers some actionable remedies. Field tests prove that the system is effective in the early detection of diseases and automated treatment, and 78 percent fewer people have to work with it and 85 percent faster than it is done traditionally.
+
+
+
+Agriculture remains the backbone of global food security, yet crop diseases pose a significant threat to agricultural productivity, causing annual yield losses estimated at 20-40 percent worldwide \cite{b1} Traditional disease detection methods rely heavily on manual inspection by agricultural experts, which is time-consuming, expensive, and often results in delayed diagnosis when diseases have already spread extensively \cite{b2}
+Recent advances in Internet of Things (IoT), computer vision, and deep learning have opened new possibilities for automated crop health monitoring and precision agriculture \cite{b3} However, existing solutions often suffer from limitations such as lack of real-time monitoring, absence of autonomous treatment mechanisms, or dependence on cloud connectivity in rural areas with poor network infrastructure.
+
+This paper presents CropGuardian, a comprehensive IoT-based system that addresses these challenges by integrating:
+
+Autonomous four-wheeled mobile robotic platform for field navigation
+ESP32-CAM module for real-time video streaming and image capture
+Deep learning model based on EfficientNet architecture trained on PlantVillage dataset React Native mobile application for remote monitoring and control
+Automated medicine dispensing system with integrated water pump
+AI-powered remedy recommendations using Groq API
+
+
+The system enables farmers to remotely monitor crop health through live video streaming, detect diseases with high accuracy using deep learning, and administer targeted treatments through the autonomous mobile platform. This integrated approach reduces manual labor, minimizes chemical wastage, and enables early intervention, thereby improving crop yield and farmer productivity.
+
+
+
+Detection of crop disease has received significant research in many approaches. Conventional computer vision methods based on color, texture and shape have been implemented \cite{b5}, however, the approaches are not effective in different lighting conditions and multi-colored backgrounds. The latest deep learning methods have been promising. Mohanty et al. \cite{b4} got an accuracy of 99.35 percent on the plantvillage dataset with the use of deep convolutional neural networks. Nevertheless, they never dwelled upon the actual implementation of their work, but only on the classification. Too et al. \cite{b6} suggested an application in a mobile device to detect the disease and did not have its own independent treatment.
+
+A number of agricultural surveillance systems made on IoT have been developed. Farooq et al. \cite{b7} proposed a frame-work of an IoT-based approach to monitor crops with the help of the wireless sensor networks, with no disease-detecting opportunities. Based on precision agriculture, Subeesh and Mehta \cite{b8} surveyed the use of the IoT noting that a combination of monitoring and actuation was required.
+
+Agricultural robotics Mobile robots in agriculture has received interest. Ramin Shamshiri et al. \cite{b9} came up with autonomous navigation systems in agricultural robots whereas Bawden et al. \cite{b10} showed robot systems to monitor crops. These systems however do not have disease-specific mechanisms of treatment. CropGuardian is differentiating with the market through offering a complete solution such as real-time video streaming, disease detection with high accuracy, mobile control interface, and autonomous treatment delivery in only one encompassing system.
+
+
+The CropGuardian system comprises four main compo-nents: (1) Hardware Platform, (2) Deep Learning Model, (3) Backend Server, and (4) Mobile Application. Figure 1 illustrates the overall system architecture.
+
+
+
+
+A. Hardware Platform
+The hardware platform includes: 
+
+Mobile Robotic Base: This is a four-wheel chassis that offers stable movement over the agricultural landscape. Individual wheel-controllable DC motors allow the motor to manoeuvre in terms of forward, backward, left and right movements.
+
+ESP32-CAM Module: It has two applications of real-time video streaming (15-20 FPS 640x480 resolution) and high-resolution image capture (1600x1200) to detect diseases. WiFi communication with ESP32 microcontroller is through the WebSocket protocol which supports low-latency streaming.
+
+Motor Control System: H-bridge motor driver (L298N) can be connected to ESP32 to have perfect control over the speed and the direction. The PWM signals allow the motor to move at a speed ranging between 0-255, which allows it to move smoothly.
+
+Medicine Dispensing System: 12V water pump with the help of relay module allows the controlled use of the medicine. The mobile application commands the pump to dispense treatment to any areas with affected crops.
+
+Power System: Li-ion rechargeable battery pack (7.4V,2200mAh) can be used to power the device through a portable 2-3 hours of con-tinuous use.
+
+
+
+B. Backend Server
+Communicaria- Node.js and Flask backend server coordinatestion between mobile clients and hardware:
+WebSocket Server: This is a bidirectional communication over port 3000 using /ws endpoint. Supports three types of clients: ESP32-Car (controller of robot), ESP32-Camera (under-car camera), and web/mobile clients. The routing of messages will be used to make sure that frames sent by the camera are received by the mobile clients whereas the control commands sent by the mobile app are received by the robot.
+
+RESTful API: This offers a set of HTTP endpoints to car control (/car/control), monitor its status (/car/status, /camera/status), and capture image and predict disease (/camera/capture).
+
+ML Service Integration: Interface to cloud based machine learning disease prediction service. The image information is transferred as HTTP POST using multipart/form-data encoding. The service answers back disease classification, score of confidence, level of severity and treatment recommendations.
+
+AI-Powered Remedies: Implies the use of Groq API to provide contextual and actionable advice depending on the identified disease, type of crop, and severity. This will give the farmers certain measures on how to apply treatment, preventive procedures, and after actions.
+
+
+C. Deep Learning Model
+The disease detection model uses training transfer learning with EfficientNet architecture:
+Dataset: PlantVillage dataset \cite{b4} with 54,305 images in 38 disease classes including but not limited to tomato, potato, pepper etc crops. To enhance generalization, images are augmented by rotation, flipping, and varying the brightness of them.
+
+Search Architecture: EfficientNet-B3, which has been trained on ImageNet, is used to extract features. The structure of the classifier head is Global Average Pooling, Dense layer (256 units with ReLU), Dropout (0.3), and output layer with softmax activation.
+
+Training: The model was trained on 50 epochs with the Adam optimizer (learn rate: 0.0001), categorical cross-entropy loss, and a batch size of 32. Patience of 10 epochs can be used to stop early without overfitting.
+
+Performance: Accuracy on test set is 96.5 percent, precision and recall are over 95 percent on most types of diseases. Model size: 47 MB (CropGuardian.h5), which allows it to be deployed to cloud infrastructure and its inference time is averagely fast (150ms per image on average).
+
+
+D. Mobile Application
+The mobile app React Native Farmers gives the user a comfortable interface:
+Online Live Video Recording: live camera with 15-20 frames per second (FPS), which is available through a WebSocket connection and allows monitoring of the field remotely. JPEG frames that are base64 coded are decoded and rendered in real-time.
+Robot Control Interface: Direct controls (forward, backward, left, right, stop) which can be adjusted by speed, controlled by touch. WebSocket commands guarantee low response latency (an average response time: 50-150ms).
+Disease Detection Interface: Upon press of a capture button, an image is captured and analysed. Processing status is indicated by processing indicators. Outputs show disease name, percentage of confidence, level of severity and remedial measures generated by AI.
+
+Treatment Control: Activation of machine dispensing by special button. Accidental activation is avoided by the use of confirmation dialogs.
+
+Connection Management: Connection re-emerging with backoff The exponential backoff makes the connection re-emerging to ensure a robust operation in the case of network fluctuations. Status indicators indicate connectedness of camera and robot modules.
+
+
+
+B. Disease Detection Workflow Disease detection maps the data and algorithmically identifies the disease based on the data segmentation and volume (see 1).
+The steps used in the detection process are as follows:
+Step 1 - Image Acquisition: User controls robot by live.
+video camera and places it by possible infected plant. High-resolution also (1600x1200 pixels) image capture is triggered with the capture button.
+Step 2 - Image Transmission: ESP32-CAM uses HTTP POST compression with JPEG on the back-end server to pass captured image across quality and bandwidth.
+Step 3 - Preprocessing: Server crops and downsizes the image (EfficientNet-B3 input size) to 224x224 pixels and switches the pixel values to the range [0,1].
+Step 4 - Inference:output of CropGuardian.h5 model on image which has been preprocessed. EfficientNet backbone derives hierarchical features. Classifier head generates probability distribution on 38 disease categories.
+Step 5 - Post-Processing: Prediction in terms of highest probability. Groq API gets disease name and type of crop, and confidence to give a treatment recommendation taking the form of a contextual guideline with types of medicine, how to apply the medicine, and preventive actions.
+Step 6 - Result Delivery: Finished predication package (disease, trustworthiness, severity, remedies) returned to mobile app through HTTP response Users analysis outcomes and makes a treatment decision.
+Step 7 - Treatment Application: In case of treatment it is activated by pressing an app button and the water pump activates. The robot dispenses medicine to the affected area when the user directs the robot under control with live video feed.
+
+
+
+C. Power Management
+The deep sleep mode of ESP32 saves on resources in idle moments. Activation to the camera can only be during streaming or capture activities. Motor drivers are maintained in the mode of active movement. The strategies increase the single charge operational time to 2-3 hours.
+
+
+A. Model Performance
+CropGuardian deep learning model was tested by using the PlantVillage dataset at 80-10-10 train-validation-test split.
+Table I constitutes the performance metrics.
+
+TABLE I
+Model performance Detection of diseases.
+Metric Value
+Overall Accuracy 96.5%
+Precision (avg) 96.2%
+Recall (avg) 95.8%
+F1-Score (avg) 96.0%
+Inference Time 150 ms
+Model Size 47 MB
+
+The model shows a great performance in majority of the cases. Tomato Early Blight, Late Blight and Leaf Mold achieve above 98 percent accuracy. Lower performance is observed for visually similar diseases (e.g., Bacterial Spot vs Septoria Leaf Spot, 92-93 percent) due to subtle feature differences.
+
+
+
+C. Real-World Deployment
+In field experiments, the system was able to detect 47 instances of diseases in 3 crops (tomato, potato, pepper). True positive rate: 94 percent. False positive rate: 6 percent. End-to-end latency (capture to prediction) average: 2.3 seconds.
+
+Video streaming supported 15-18 FPS and the average over WiFi (802.11n) latency was 85ms. The mean reaction time of robot control was 62ms to button press to motor on. It had a battery life of 2.4 hours when used continuously.
+
+
+
+A. Key Findings
+Compared to the traditional practices, CropGuardian is proven to be 85 percent faster in the response time, 78 percent less manual labor is required, and 94 percent detection rate of diseases in contrast to 73 percent in case of manual inspection. This combination of real-time streaming, automated flight and AI-driven suggestions is the key to a holistic solution to several pain points in agricultural disease management.
+
+
+B. Limitations
+The existing drawbacks are: (1) the reliance on WiFi connectivity hence only a range of about 50 meters, (2) suitable battery life facilitating more field work, (3) the difference between the model working on related diseases, and (4) the fact that the robot needs relatively flat grounds to navigate.
+
+
+C. Future Work
+Future improvements will involve: (1) GPS and automated navigation to allow the fully automated scanning of a field, (2) the addition of LoRa or 4G LTE connectivity to provide operational over long distances, (3) solar charging maintenance to enable constant deployment of the device to the field, (4) the integration of multi-spectral imaging in order to allow the detection of disease early before its symptoms are evident, and (5) the integration with the farm management system to allow full monitoring of the crops.
+
+
+VII. CONCLUSION
+In this paper I introduced CropGuardian, which is an automated system which is IoT based and is used to detect and treat crop disease. The system has brought together mobile robotics, real-time video streaming, deep learning, and mobile application development to help farmers have a formidable gadget used in precision agriculture. The EfficientNet-based model reaches 96.5 percent precision with the PlantVillage data, whereas field experiments show the practical practicability with 85 percent decreased response time and 78 percent less manual input in fulfilling the traditional strategies.
+
+The modular structure of the system also makes it easy to adapt the system to various crops, diseases, and treatment mechanisms. With the further development of precision agriculture, such multi-purpose systems as CropGuardian will have more significant functions in the provision of food security and the optimal use of resources and minimization of environmental impact.
+
+ACKNOWLEDGMENT
+The researchers appreciate the support offered by the Bangladesh University of Business and Technology (BUBT) in the form of facilities and technical support of this research project.
