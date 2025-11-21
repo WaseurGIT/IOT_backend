@@ -129,23 +129,33 @@ wss.on("connection", function (ws, req) {
     var messageText = null;
     var parsed = null;
 
-    console.log(
-      "📨 Message received from",
-      clientType,
-      ":",
-      data.length,
-      "bytes"
-    );
+    // Only log non-frame messages (reduces spam from 10 FPS camera stream)
+    var shouldLog = true;
+    if (clientType === "esp32_camera" && Buffer.isBuffer(data) && data.length > 1000) {
+      shouldLog = false; // Skip logging binary camera frames
+    }
+    
+    if (shouldLog) {
+      console.log(
+        "📨 Message received from",
+        clientType,
+        ":",
+        data.length,
+        "bytes"
+      );
+    }
 
     // Convert buffer to string if needed
     if (Buffer.isBuffer(data)) {
       try {
         messageText = data.toString("utf8");
         parsed = JSON.parse(messageText);
-        console.log("   Parsed JSON:", parsed);
+        if (shouldLog) {
+          console.log("   Parsed JSON:", parsed);
+        }
       } catch (e) {
         // Not JSON, treat as binary frame data (for camera)
-        console.log("   Binary data - treating as camera frame");
+        // Don't log - already handled by processFrame
         if (isESP32 && esp32CameraClient === ws) {
           processFrame(data);
         } else if (!isESP32) {
@@ -157,7 +167,9 @@ wss.on("connection", function (ws, req) {
       messageText = data;
       try {
         parsed = JSON.parse(messageText);
-        console.log("   Parsed JSON:", parsed);
+        if (shouldLog) {
+          console.log("   Parsed JSON:", parsed);
+        }
       } catch (e) {
         console.log("   ❌ Invalid JSON:", messageText);
         // Not JSON, ignore
