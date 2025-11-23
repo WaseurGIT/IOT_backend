@@ -6,10 +6,10 @@
 const char *ssid = "TP-Link";
 const char *password = "asdfghjkl";
 
-// WebSocket server
+// WebSocket server - CAR ENDPOINT
 const char *websocket_server = "192.168.0.115";
 const int websocket_port = 3000;
-const char *websocket_path = "/ws";
+const char *websocket_path = "/ws/car";  // Changed to car endpoint
 
 // Motor A (Left wheels) pins
 #define ENA 33
@@ -43,8 +43,8 @@ void setup()
   pinMode(ENB, OUTPUT);
 
   // Setup PWM - FIXED FOR ESP32 CORE v3.x
-  ledcAttach(ENA, freq, resolution);  // Replaces ledcSetup + ledcAttachPin
-  ledcAttach(ENB, freq, resolution);  // Replaces ledcSetup + ledcAttachPin
+  ledcAttach(ENA, freq, resolution);
+  ledcAttach(ENB, freq, resolution);
 
   // Stop motors initially
   stopCar();
@@ -58,7 +58,7 @@ void setup()
   }
   Serial.println("Connected to WiFi");
 
-  // Initialize WebSocket
+  // Initialize WebSocket - CAR ENDPOINT
   webSocket.begin(websocket_server, websocket_port, websocket_path);
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
@@ -109,12 +109,12 @@ void motorBStop()
 
 void setMotorASpeed(uint8_t speed)
 {
-  ledcWrite(ENA, speed);  // Changed: now writes directly to pin instead of channel
+  ledcWrite(ENA, speed);
 }
 
 void setMotorBSpeed(uint8_t speed)
 {
-  ledcWrite(ENB, speed);  // Changed: now writes directly to pin instead of channel
+  ledcWrite(ENB, speed);
 }
 
 // ===== CAR CONTROL FUNCTIONS ===== //
@@ -139,7 +139,6 @@ void moveBackward()
 
 void turnLeft()
 {
-  // Left motor backward, right motor forward
   motorABackward();
   motorBForward();
   setMotorASpeed(motorSpeed);
@@ -149,7 +148,6 @@ void turnLeft()
 
 void turnRight()
 {
-  // Left motor forward, right motor backward
   motorAForward();
   motorBBackward();
   setMotorASpeed(motorSpeed);
@@ -174,34 +172,40 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
   {
   case WStype_CONNECTED:
   {
-    Serial.printf("✅ Connected to WebSocket server\n");
+    Serial.printf("✅ Connected to Car WebSocket server\n");
 
     // Send identification message
     String identifyMsg = "{\"type\":\"esp32_car\",\"device\":\"car_controller\",\"status\":\"ready\"}";
     webSocket.sendTXT(identifyMsg);
-    Serial.println("📤 Sent identification message");
+    Serial.println("📤 Sent car identification message");
     break;
   }
 
   case WStype_DISCONNECTED:
-    Serial.printf("❌ Disconnected from WebSocket server\n");
+    Serial.printf("❌ Disconnected from Car WebSocket server\n");
     break;
 
   case WStype_TEXT:
   {
-    Serial.printf("📨 Received: %s\n", payload);
+    Serial.printf("📨 Car received: %s\n", payload);
     handleCommand((char *)payload);
     break;
   }
 
   case WStype_ERROR:
-    Serial.printf("❌ WebSocket error\n");
+    Serial.printf("❌ Car WebSocket error\n");
     break;
   }
 }
 
 void handleCommand(char *command)
 {
+  // Quick check for car command structure
+  if (command[0] != '{' || strstr(command, "\"command\"") == NULL) {
+    Serial.println("🔄 Quick ignore - not a car command");
+    return;
+  }
+
   // Parse JSON command
   DynamicJsonDocument doc(200);
   DeserializationError error = deserializeJson(doc, command);
@@ -212,26 +216,14 @@ void handleCommand(char *command)
     return;
   }
 
-  // ⚠️ CRITICAL FIX: Ignore acknowledgment messages from ourselves or server
-  if (doc.containsKey("type"))
-  {
-    String messageType = doc["type"];
-    if (messageType == "ack" || messageType == "car_ack")
-    {
-      Serial.println("🔄 Ignoring ACK message (to prevent loop)");
-      return; // Don't process acknowledgment messages
-    }
+  // Check if this is actually a car command
+  if (!doc.containsKey("command")) {
+    Serial.println("🔄 Ignoring non-command message");
+    return;
   }
 
   String cmd = doc["command"];
-  int speed = doc["speed"] | motorSpeed; // Use provided speed or default
-
-  // Check if command is valid
-  if (cmd == "")
-  {
-    Serial.println("⚠️  Empty command received");
-    return;
-  }
+  int speed = doc["speed"] | motorSpeed;
 
   // Update motor speed if provided
   if (doc.containsKey("speed"))
@@ -264,10 +256,10 @@ void handleCommand(char *command)
   else
   {
     Serial.printf("⚠️  Unknown command: %s\n", cmd.c_str());
-    return; // Don't send ACK for unknown commands
+    return;
   }
 
-  // Send acknowledgment back to server (only for valid commands)
+  // Send acknowledgment back to server
   DynamicJsonDocument ackDoc(100);
   ackDoc["type"] = "ack";
   ackDoc["command"] = cmd;

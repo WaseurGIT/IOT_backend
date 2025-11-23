@@ -1,11 +1,11 @@
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <WebSocketsClient.h>
-#include <WiFiClientSecure.h>  // For SSL/WSS (Render deployment)
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 
 // ===== DEPLOYMENT CONFIGURATION ===== //
-#define USE_RENDER false  // Set to true for Render.com, false for local development
+#define USE_RENDER false
 // ==================================== //
 
 // ===== WIFI CONFIGURATION ===== //
@@ -13,26 +13,24 @@ const char* ssid = "TP-Link";
 const char* password = "asdfghjkl";
 // ============================== //
 
-// Server Configuration
+// Server Configuration - CAMERA ENDPOINT
 #if USE_RENDER
-  // Render.com configuration (Production)
-  const char* serverHost = "iot-backend-uy96.onrender.com";  // Your Render URL
-  const uint16_t serverPort = 443;  // HTTPS/WSS port
-  const char* serverPath = "/ws";
+  const char* serverHost = "iot-backend-uy96.onrender.com";
+  const uint16_t serverPort = 443;
+  const char* serverPath = "/ws/camera";  // Changed to camera endpoint
 #else
-  // Local development configuration
   const char* serverHost = "192.168.0.115";
   const uint16_t serverPort = 3000;
-  const char* serverPath = "/ws";
+  const char* serverPath = "/ws/camera";  // Changed to camera endpoint
 #endif
 
 WebSocketsClient webSocket;
-WiFiClientSecure secureClient;  // For SSL (Render)
+WiFiClientSecure secureClient;
 bool wsConnected = false;
 unsigned long lastFrameTime = 0;
 const int frameInterval = 100; // ~10 FPS
 
-// Camera configuration (same as yours)
+// Camera configuration
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -53,27 +51,24 @@ const int frameInterval = 100; // ~10 FPS
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
   switch(type) {
     case WStype_DISCONNECTED:
-      Serial.println("❌ WebSocket DISCONNECTED");
+      Serial.println("❌ Camera WebSocket DISCONNECTED");
       wsConnected = false;
       break;
       
     case WStype_CONNECTED:
-      Serial.printf("✅ WebSocket CONNECTED to: %s\n", payload);
+      Serial.printf("✅ Camera WebSocket CONNECTED to: %s\n", payload);
       wsConnected = true;
-      // Send identification
       sendIdentification();
       break;
       
     case WStype_TEXT:
-      // Handle text messages from server
-      if (length < 100) { // Don't print long messages
-        Serial.printf("📨 Message: %s\n", payload);
+      if (length < 100) {
+        Serial.printf("📨 Camera message: %s\n", payload);
       }
       break;
       
     case WStype_BIN:
-      // Handle binary messages
-      Serial.printf("📦 Binary data: %d bytes\n", length);
+      Serial.printf("📦 Camera binary data: %d bytes\n", length);
       break;
       
     case WStype_ERROR:
@@ -89,7 +84,7 @@ void sendIdentification() {
   DynamicJsonDocument doc(200);
   doc["type"] = "esp32_camera";
   doc["device"] = "ESP32-CAM";
-  doc["frame_size"] = "CIF";  // Changed from "QVGA" to "CIF"
+  doc["frame_size"] = "CIF";
   doc["quality"] = 15;
   
   String message;
@@ -108,7 +103,7 @@ void sendFrame() {
     return;
   }
   
-  // Send as binary data (more efficient than base64)
+  // Send as binary data
   bool success = webSocket.sendBIN(fb->buf, fb->len);
   
   if (!success) {
@@ -147,7 +142,7 @@ bool initCamera() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 10000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_CIF;  // Changed from FRAMESIZE_QVGA to FRAMESIZE_CIF
+  config.frame_size = FRAMESIZE_CIF;
   config.jpeg_quality = 15;
   config.fb_count = 1;
 
@@ -171,27 +166,18 @@ bool connectWiFi() {
 }
 
 void connectWebSocket() {
-  Serial.println("\n🔌 Connecting to WebSocket...");
+  Serial.println("\n🔌 Connecting to Camera WebSocket...");
   
   #if USE_RENDER
-    // Render.com - Use Secure WebSocket (WSS)
     Serial.println("   Mode: Production (Render.com)");
     Serial.println("   Protocol: WSS (Secure)");
     Serial.printf("   Server: %s:%d%s\n", serverHost, serverPort, serverPath);
-    
-    // IMPORTANT: Skip SSL certificate validation for Render.com
-    // ESP32 can't validate Render's SSL certificate, so we skip validation
     secureClient.setInsecure();
-    
-    // Initialize secure WebSocket
     webSocket.beginSSL(serverHost, serverPort, serverPath);
   #else
-    // Local - Use Plain WebSocket (WS)
     Serial.println("   Mode: Local Development");
     Serial.println("   Protocol: WS (Plain)");
     Serial.printf("   Server: %s:%d%s\n", serverHost, serverPort, serverPath);
-    
-    // Initialize plain WebSocket
     webSocket.begin(serverHost, serverPort, serverPath);
   #endif
   
@@ -227,7 +213,6 @@ void setup() {
 void loop() {
   webSocket.loop();
   
-  // Handle WiFi disconnection
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("⚠️ WiFi disconnected");
     wsConnected = false;
@@ -239,7 +224,6 @@ void loop() {
     return;
   }
   
-  // Send frames when connected
   if (wsConnected && webSocket.isConnected()) {
     unsigned long currentTime = millis();
     if (currentTime - lastFrameTime >= frameInterval) {
@@ -247,10 +231,9 @@ void loop() {
       lastFrameTime = currentTime;
     }
   } else {
-    // Try to reconnect if disconnected
     static unsigned long lastReconnectAttempt = 0;
     if (millis() - lastReconnectAttempt > 5000) {
-      Serial.println("🔄 Attempting to reconnect...");
+      Serial.println("🔄 Attempting to reconnect camera...");
       connectWebSocket();
       lastReconnectAttempt = millis();
     }

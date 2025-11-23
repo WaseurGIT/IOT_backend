@@ -23,14 +23,51 @@ app.set("port", port);
 var server = http.createServer(app);
 
 /**
- * Setup WebSocket Server (plain WebSocket, not Socket.IO)
+ * Setup WebSocket Servers (plain WebSocket, not Socket.IO)
+ * Separate endpoints for camera and car for cleaner separation
  */
 
 var WebSocket = require("ws");
+
+// Camera WebSocket Server
+var wssCam = new WebSocket.Server({
+  noServer: true,
+  perMessageDeflate: false,
+});
+
+// Car WebSocket Server
+var wssCar = new WebSocket.Server({
+  noServer: true,
+  perMessageDeflate: false,
+});
+
+// General WebSocket Server (for web clients)
 var wss = new WebSocket.Server({
-  server: server,
-  path: "/ws",
-  perMessageDeflate: false, // Disable compression for binary frames
+  noServer: true,
+  perMessageDeflate: false,
+});
+
+// Handle HTTP upgrade for different paths
+server.on("upgrade", function (request, socket, head) {
+  var pathname = require("url").parse(request.url).pathname;
+  
+  console.log("🔌 WebSocket upgrade request for:", pathname);
+  
+  if (pathname === "/ws/camera") {
+    wssCam.handleUpgrade(request, socket, head, function (ws) {
+      wssCam.emit("connection", ws, request);
+    });
+  } else if (pathname === "/ws/car") {
+    wssCar.handleUpgrade(request, socket, head, function (ws) {
+      wssCar.emit("connection", ws, request);
+    });
+  } else if (pathname === "/ws") {
+    wss.handleUpgrade(request, socket, head, function (ws) {
+      wss.emit("connection", ws, request);
+    });
+  } else {
+    socket.destroy();
+  }
 });
 
 // Make wss accessible to our router
@@ -260,11 +297,11 @@ wss.on("connection", function (ws, req) {
       }
     }
 
-    // Handle car control commands from web clients
-    if (parsed && parsed.command && !isESP32) {
-      handleCarCommand(parsed);
-      return;
-    }
+  // Handle car control commands from web clients
+  if (parsed && parsed.command) {
+    handleCarCommand(parsed);
+    return;
+  }
 
     // If it's binary and ESP32 camera is identified, process as frame
     if (Buffer.isBuffer(data) && isESP32 && esp32CameraClient === ws) {
@@ -415,6 +452,192 @@ wss.on("connection", function (ws, req) {
   });
 });
 
+// ===== CAMERA WEBSOCKET HANDLER (/ws/camera) ===== //
+wssCam.on("connection", function (ws, req) {
+  connectedClients++;
+  var clientIP = req.socket.remoteAddress;
+  
+  console.log("\n=== ESP32 CAMERA CONNECTION (/ws/camera) ===");
+  console.log("📷 Camera connected (" + connectedClients + " total)");
+  console.log("   Remote address: " + clientIP);
+  
+  esp32CameraClient = ws;
+  app.set("esp32CameraClient", ws);
+  
+  // Update camera status
+  var esp32Status = app.get("esp32Status");
+  esp32Status.connected = true;
+  esp32Status.lastUpdate = new Date();
+  app.set("esp32Status", esp32Status);
+  
+  // Handle messages from camera
+  ws.on("message", function (data) {
+    // Handle identification message
+    if (!Buffer.isBuffer(data)) {
+      try {
+        var parsed = JSON.parse(data);
+        if (parsed.type === "esp32_camera") {
+          console.log("📷 Camera identified:", parsed.device || "Unknown");
+          esp32Status.deviceInfo = parsed.device;
+          app.set("esp32Status", esp32Status);
+          
+          // Notify web clients
+          webClients.forEach(function (client) {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({
+                type: "camera_connected",
+                device: parsed.device,
+              }));
+            }
+          });
+        }
+        return;
+      } catch (e) {
+        // Not JSON, ignore
+      }
+    }
+    
+    // Handle binary frame data
+    if (Buffer.isBuffer(data) && data.length > 0) {
+      // Save as latest frame
+      app.set("latestFrame", data);
+      
+      // Update frame count
+      var frameCount = (app.get("frameCount") || 0) + 1;
+      app.set("frameCount", frameCount);
+      
+      // Increment FPS counter
+      var incrementFrameCount = app.get("incrementFrameCount");
+      if (incrementFrameCount) {
+        incrementFrameCount();
+      }
+      
+      // Update status
+      esp32Status.connected = true;
+      esp32Status.lastUpdate = new Date();
+      esp32Status.frameCount = frameCount;
+      app.set("esp32Status", esp32Status);
+      
+      // Broadcast to web clients
+      var frameMessage = JSON.stringify({
+        type: "frame",
+        image: data.toString("base64"),
+        timestamp: Date.now(),
+      });
+      
+      webClients.forEach(function (client) {
+        if (client.readyState === 1) {
+          client.send(frameMessage);
+        }
+      });
+    }
+  });
+  
+  ws.on("close", function () {
+    connectedClients--;
+    console.log("📷 Camera disconnected");
+    esp32CameraClient = null;
+    app.set("esp32CameraClient", null);
+    esp32Status.connected = false;
+    app.set("esp32Status", esp32Status);
+    
+    // Notify web clients
+    webClients.forEach(function (client) {
+      if (client.readyState === 1) {
+        client.send(JSON.stringify({ type: "camera_disconnected" }));
+      }
+    });
+  });
+  
+  ws.on("error", function (error) {
+    console.error("⚠️  Camera WebSocket error:", error);
+  });
+});
+
+// ===== CAR WEBSOCKET HANDLER (/ws/car) ===== //
+wssCar.on("connection", function (ws, req) {
+  connectedClients++;
+  var clientIP = req.socket.remoteAddress;
+  
+  console.log("\n=== ESP32 CAR CONNECTION (/ws/car) ===");
+  console.log("🚗 Car connected (" + connectedClients + " total)");
+  console.log("   Remote address: " + clientIP);
+  
+  esp32CarClient = ws;
+  app.set("esp32CarClient", ws);
+  
+  // Update car status
+  var carStatus = app.get("carStatus");
+  carStatus.connected = true;
+  carStatus.lastUpdate = new Date();
+  app.set("carStatus", carStatus);
+  
+  // Handle messages from car
+  ws.on("message", function (data) {
+    try {
+      var messageText = Buffer.isBuffer(data) ? data.toString("utf8") : data;
+      var parsed = JSON.parse(messageText);
+      
+      console.log("📨 Car message:", parsed);
+      
+      // Handle identification
+      if (parsed.type === "esp32_car") {
+        console.log("🚗 Car identified:", parsed.device || "Unknown", "Status:", parsed.status || "Unknown");
+        carStatus.status = parsed.status || "ready";
+        carStatus.deviceInfo = parsed.device;
+        app.set("carStatus", carStatus);
+        
+        // Notify web clients
+        webClients.forEach(function (client) {
+          if (client.readyState === 1) {
+            client.send(JSON.stringify({
+              type: "car_connected",
+              device: parsed.device,
+              status: parsed.status,
+            }));
+          }
+        });
+      }
+      // Handle acknowledgments
+      else if (parsed.type === "ack") {
+        console.log("✅ Car ACK:", parsed.command, "Status:", parsed.status);
+        webClients.forEach(function (client) {
+          if (client.readyState === 1) {
+            client.send(JSON.stringify({
+              type: "car_ack",
+              command: parsed.command,
+              status: parsed.status,
+            }));
+          }
+        });
+      }
+    } catch (e) {
+      console.log("❌ Invalid message from car");
+    }
+  });
+  
+  ws.on("close", function () {
+    connectedClients--;
+    console.log("🚗 Car disconnected");
+    esp32CarClient = null;
+    app.set("esp32CarClient", null);
+    carStatus.connected = false;
+    carStatus.status = "disconnected";
+    app.set("carStatus", carStatus);
+    
+    // Notify web clients
+    webClients.forEach(function (client) {
+      if (client.readyState === 1) {
+        client.send(JSON.stringify({ type: "car_disconnected" }));
+      }
+    });
+  });
+  
+  ws.on("error", function (error) {
+    console.error("⚠️  Car WebSocket error:", error);
+  });
+});
+
 /**
  * Listen on provided port, on all network interfaces.
  * Explicitly bind to 0.0.0.0 to accept connections from ESP32 and other devices
@@ -480,11 +703,12 @@ function onListening() {
   debug("Listening on " + bind);
   console.log("\n=== SERVER STARTED ===");
   console.log("🚀 Server running on port", addr.port);
-  console.log("🌐 Access via: http://localhost:" + addr.port);
-  console.log("📡 WebSocket: ws://localhost:" + addr.port + "/ws");
-  console.log(
-    "📡 WebSocket (network): ws://" + getLocalIP() + ":" + addr.port + "/ws"
-  );
+  console.log("🌐 HTTP: http://localhost:" + addr.port);
+  console.log("🌐 HTTP (network): http://" + getLocalIP() + ":" + addr.port);
+  console.log("\n📡 WebSocket Endpoints:");
+  console.log("   📷 Camera:  ws://" + getLocalIP() + ":" + addr.port + "/ws/camera");
+  console.log("   🚗 Car:     ws://" + getLocalIP() + ":" + addr.port + "/ws/car");
+  console.log("   🌐 Web:     ws://" + getLocalIP() + ":" + addr.port + "/ws");
 }
 
 /**
